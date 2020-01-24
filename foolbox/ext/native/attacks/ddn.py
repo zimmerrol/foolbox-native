@@ -10,7 +10,7 @@ from ..criteria import misclassification, TargetedMisclassification, Misclassifi
 
 def normalize_l2_norms(x: ep.Tensor) -> ep.Tensor:
     norms = flatten(x).square().sum(axis=-1).sqrt()
-    norms = ep.maximum(norms, 1e-12)  # avoid divsion by zero
+    norms = ep.maximum(norms, 1e-12)  # avoid division by zero
     factor = 1 / norms
     factor = atleast_kd(factor, x.ndim)
     return x * factor
