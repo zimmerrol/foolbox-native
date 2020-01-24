@@ -28,6 +28,7 @@ from .binarization import BinarizationRefinementAttack  # noqa: F401
 from .boundary_attack import BoundaryAttack  # noqa: F401
 from .blur import GaussianBlurAttack  # noqa: F401
 from .deepfool import L2DeepFoolAttack, LinfDeepFoolAttack  # noqa: F401
+from .ddn import DDNAttack
 
 FGM = L2FastGradientAttack
 FGSM = LinfinityFastGradientAttack
