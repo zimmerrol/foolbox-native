@@ -52,20 +52,18 @@ class NewtonFoolAttack(MinimizationAttack):
         x_l2_norm = flatten(x.square()).sum(1)
 
         def loss_fun(x):
-            # TODO: this is wrong!
             logits = model(x)
             scores = ep.softmax(logits)
-            pred = scores.argmax(-1)
-            loss = scores.sum()
-            return loss, (scores, pred)
+            loss = ep.take_along_axis(scores, classes, -1).sum()
+            return loss, scores
 
         for i in range(self.max_iter):
             # (1) get the scores and gradients
-            _, (scores, pred), gradients = ep.value_aux_and_grad(loss_fun, x)
+            _, scores, gradients = ep.value_aux_and_grad(loss_fun, x)
 
-            pred_scores = scores[rows, classes]
-
-            num_classes = pred.shape[-1]
+            pred = scores.argmax(-1)
+            pred_scores = ep.take_along_axis(scores, classes, -1)
+            num_classes = scores.shape[-1]
 
             # (2) calculate gradient norm
             gradients_l2_norm = flatten(gradients.square()).sum(1)
