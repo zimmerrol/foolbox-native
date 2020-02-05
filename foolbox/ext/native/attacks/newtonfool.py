@@ -35,7 +35,6 @@ class NewtonFoolAttack(MinimizationAttack):
         del inputs, criterion
 
         N = len(x)
-        rows = range(N)
 
         if isinstance(criterion_, Misclassification):
             classes = criterion_.labels
