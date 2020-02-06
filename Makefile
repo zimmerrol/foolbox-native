@@ -1,10 +1,34 @@
 .PHONY: test
 test:
-	pytest --verbose
+	pytest --cov=foolbox.ext.native
+	pytest --cov=foolbox.ext.native --cov-append --backend pytorch
+	pytest --cov=foolbox.ext.native --cov-append --backend tensorflow
+	pytest --cov=foolbox.ext.native --cov-append --backend jax
+	pytest --cov=foolbox.ext.native --cov-append --backend numpy
+
+.PHONY: test
+testskipslow:
+	pytest --skipslow --cov=foolbox.ext.native
+	pytest --skipslow --cov=foolbox.ext.native --cov-append --backend pytorch
+	pytest --skipslow --cov=foolbox.ext.native --cov-append --backend tensorflow
+	pytest --skipslow --cov=foolbox.ext.native --cov-append --backend jax
+	pytest --skipslow --cov=foolbox.ext.native --cov-append --backend numpy
+
+.PHONY: testattacks
+testattacks:
+	pytest --pdb --cov=foolbox.ext.native.attacks tests/test_attacks.py tests/attacks/
+	pytest --pdb --cov=foolbox.ext.native.attacks tests/test_attacks.py tests/attacks/ --cov-append --backend pytorch
+	pytest --pdb --cov=foolbox.ext.native.attacks tests/test_attacks.py tests/attacks/ --cov-append --backend tensorflow
+	pytest --pdb --cov=foolbox.ext.native.attacks tests/test_attacks.py tests/attacks/ --cov-append --backend jax
+	pytest --pdb --cov=foolbox.ext.native.attacks tests/test_attacks.py tests/attacks/ --cov-append --backend numpy
 
 .PHONY: black
 black:
 	black .
+
+.PHONY: blackcheck
+blackcheck:
+	black --check .
 
 .PHONY: flake8
 flake8:
@@ -12,7 +36,9 @@ flake8:
 
 .PHONY: mypy
 mypy:
-	mypy -m foolbox.ext.native
+	mypy -p foolbox.ext.native
+	mypy tests/
+	# mypy tests/attacks/
 
 .PHONY: install
 install:

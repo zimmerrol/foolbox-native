@@ -1,61 +1,51 @@
+from abc import ABC, abstractmethod
+from typing import TypeVar
 import eagerpy as ep
+
 from .devutils import flatten
-from .devutils import wrap
 
 
-# all distances should
-# * accept native tensors and EagerPy tensors -> use wrap
-# * return the same format as the input -> use restore
-# * expect a batch dimension and arbitrary other dimensions -> use flatten
-# * accept two arguments, reference and perturbed
-# * accept an optional keyword argument bounds
+T = TypeVar("T")
 
 
-def _normalize(x, bounds):
-    if bounds is None:
-        return x
-    min_, max_ = bounds
-    assert x.min() >= min_
-    assert x.max() <= max_
-    x = (x - min_) / (max_ - min_)
-    return x
+class Distance(ABC):
+    @abstractmethod
+    def __call__(self, reference: T, perturbed: T) -> T:
+        ...
 
 
-def l0(reference, perturbed, bounds=None):
-    reference, perturbed, restore = wrap(reference, perturbed)
-    reference = _normalize(reference, bounds)
-    perturbed = _normalize(perturbed, bounds)
-    norms = ep.norms.l0(flatten(perturbed - reference), axis=-1)
-    return restore(norms)
+class LpDistance(Distance):
+    def __init__(self, p: float):
+        self.p = p
+
+    def __repr__(self) -> str:
+        return f"LpDistance({self.p})"
+
+    def __str__(self) -> str:
+        return f"L{self.p} distance"
+
+    def __call__(self, reference: T, perturbed: T) -> T:
+        """Calculates the distance from reference to perturbed using the Lp norm.
+
+        Parameters
+        ----------
+        reference : T
+            A batch of reference inputs.
+        perturbed : T
+            A batch of perturbed inputs.
+
+        Returns
+        -------
+        T
+            Returns a batch of distances as a 1D tensor.
+
+        """
+        (x, y), restore_type = ep.astensors_(reference, perturbed)
+        norms = ep.norms.lp(flatten(y - x), self.p, axis=-1)
+        return restore_type(norms)
 
 
-def l1(reference, perturbed, bounds=None):
-    reference, perturbed, restore = wrap(reference, perturbed)
-    reference = _normalize(reference, bounds)
-    perturbed = _normalize(perturbed, bounds)
-    norms = ep.norms.l1(flatten(perturbed - reference), axis=-1)
-    return restore(norms)
-
-
-def l2(reference, perturbed, bounds=None):
-    reference, perturbed, restore = wrap(reference, perturbed)
-    reference = _normalize(reference, bounds)
-    perturbed = _normalize(perturbed, bounds)
-    norms = ep.norms.l2(flatten(perturbed - reference), axis=-1)
-    return restore(norms)
-
-
-def linf(reference, perturbed, bounds=None):
-    reference, perturbed, restore = wrap(reference, perturbed)
-    reference = _normalize(reference, bounds)
-    perturbed = _normalize(perturbed, bounds)
-    norms = ep.norms.linf(flatten(perturbed - reference), axis=-1)
-    return restore(norms)
-
-
-def lp(reference, perturbed, bounds=None):
-    reference, perturbed, restore = wrap(reference, perturbed)
-    reference = _normalize(reference, bounds)
-    perturbed = _normalize(perturbed, bounds)
-    norms = ep.norms.lp(flatten(perturbed - reference), axis=-1)
-    return restore(norms)
+l0 = LpDistance(0)
+l1 = LpDistance(1)
+l2 = LpDistance(2)
+linf = LpDistance(ep.inf)

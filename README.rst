@@ -1,6 +1,9 @@
 .. image:: https://badge.fury.io/py/foolbox-native.svg
     :target: https://badge.fury.io/py/foolbox-native
 
+.. image:: https://codecov.io/gh/jonasrauber/foolbox-native/branch/master/graph/badge.svg
+  :target: https://codecov.io/gh/jonasrauber/foolbox-native
+
 .. image:: https://img.shields.io/badge/code%20style-black-000000.svg
     :target: https://github.com/ambv/black
 
@@ -8,6 +11,8 @@
 ==============
 Foolbox Native
 ==============
+
+**WARNING: The latest Foolbox Native release on PyPI (0.8.0) requires EagerPy 0.15.0 (newer versions will not work). We are currently making major changes to Foolbox Native. With the next version, this will be fixed.**
 
 Foolbox Native is an extension for `Foolbox <https://github.com/bethgelab/foolbox>`_
 that tries to bring native performance to Foolbox. This extension is a
@@ -140,3 +145,15 @@ Unlike Foolbox:
 
   * Foolbox, on the other hand, searches for the smallest perturbation while
     guaranteeing that the returned samples are adversarial
+
+
+Development
+-----------
+
+For development, it is recommended to do a an editable installation of Foolbox
+and Foolbox native using :code:`pip install -e .` in the corresponding folders (after
+cloning the two repositories). Unfortunately, `pip` has a
+`bug <https://github.com/pypa/pip/issues/7265>`_ with editable installs and
+namespace packages like Foolbox Native. A simple workaround is to add a symlink
+to the :code:`foolbox/ext/native` folder of Foolbox Native in the :code:`foolbox/ext/` folder
+of Foolbox itself.

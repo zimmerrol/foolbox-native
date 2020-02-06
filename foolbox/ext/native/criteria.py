@@ -1,80 +1,70 @@
-import abc
-from abc import abstractmethod
+from typing import TypeVar, Any
+from abc import ABC, abstractmethod
 import eagerpy as ep
 
 
-class Criterion(abc.ABC):
+T = TypeVar("T")
+
+
+class Criterion(ABC):
     @abstractmethod
-    def __call__(
-        self,
-        inputs: ep.Tensor,
-        labels: ep.Tensor,
-        perturbed: ep.Tensor,
-        logits: ep.Tensor,
-    ) -> ep.Tensor:
-        raise NotImplementedError
+    def __repr__(self) -> str:
+        ...
 
     @abstractmethod
-    def __repr__(self):
-        raise NotImplementedError
+    def __call__(self, perturbed: T, outputs: T) -> T:
+        ...
 
-    def __and__(self, other):
-        return And(self, other)
+    def __and__(self, other: "Criterion") -> "_And":
+        return _And(self, other)
 
 
-class And(Criterion):
-    def __init__(self, a, b):
+class _And(Criterion):
+    def __init__(self, a: Criterion, b: Criterion) -> None:
         super().__init__()
         self.a = a
         self.b = b
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.a!r} & {self.b!r}"
 
-    def __call__(
-        self,
-        inputs: ep.Tensor,
-        labels: ep.Tensor,
-        perturbed: ep.Tensor,
-        logits: ep.Tensor,
-    ) -> ep.Tensor:
-        a = self.a(inputs, labels, perturbed, logits)
-        b = self.b(inputs, labels, perturbed, logits)
-        return ep.logical_and(a, b)
+    def __call__(self, perturbed: T, outputs: T) -> T:
+        args, restore_type = ep.astensors_(perturbed, outputs)
+        a = self.a(*args)
+        b = self.b(*args)
+        is_adv = ep.logical_and(a, b)
+        return restore_type(is_adv)
 
 
 class Misclassification(Criterion):
-    def __repr__(self):
-        return f"{self.__class__.__name__}()"
+    def __init__(self, labels: Any) -> None:
+        super().__init__()
+        self.labels: ep.Tensor = ep.astensor(labels)
 
-    def __call__(
-        self,
-        inputs: ep.Tensor,
-        labels: ep.Tensor,
-        perturbed: ep.Tensor,
-        logits: ep.Tensor,
-    ) -> ep.Tensor:
-        classes = logits.argmax(axis=-1)
-        return classes != labels
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.labels!r})"
 
+    def __call__(self, perturbed: T, outputs: T) -> T:
+        outputs_, restore_type = ep.astensor_(outputs)
+        del perturbed, outputs
 
-misclassification = Misclassification()
+        classes = outputs_.argmax(axis=-1)
+        is_adv = classes != self.labels
+        return restore_type(is_adv)
 
 
 class TargetedMisclassification(Criterion):
-    def __init__(self, target_classes: ep.Tensor):
+    def __init__(self, target_classes: Any) -> None:
         super().__init__()
-        self.target_classes = target_classes
+        self.target_classes: ep.Tensor = ep.astensor(target_classes)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.target_classes!r})"
 
-    def __call__(
-        self,
-        inputs: ep.Tensor,
-        labels: ep.Tensor,
-        perturbed: ep.Tensor,
-        logits: ep.Tensor,
-    ) -> ep.Tensor:
-        classes = logits.argmax(axis=-1)
-        return classes == self.target_classes
+    def __call__(self, perturbed: T, outputs: T) -> T:
+        outputs_, restore_type = ep.astensor_(outputs)
+        del perturbed, outputs
+
+        classes = outputs_.argmax(axis=-1)
+        is_adv = classes == self.target_classes
+        return restore_type(is_adv)

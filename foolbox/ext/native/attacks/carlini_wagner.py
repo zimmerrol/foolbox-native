@@ -1,72 +1,112 @@
+from typing import Union, Tuple
+from functools import partial
 import numpy as np
 import eagerpy as ep
-from functools import partial
 
 from ..devutils import flatten
 from ..devutils import atleast_kd
 
+from ..types import Bounds
 
-class L2CarliniWagnerAttack:
-    "Carlini Wagner L2 Attack"
+from ..models import Model
 
-    def __init__(self, model):
-        self.model = model
+from ..criteria import Misclassification
+from ..criteria import TargetedMisclassification
+
+from .base import MinimizationAttack
+from .base import T
+from .base import get_criterion
+
+
+class L2CarliniWagnerAttack(MinimizationAttack):
+    """Carlini Wagner L2 Attack
+
+    Parameters
+    ----------
+    steps
+        Number of optimization steps within each binary search step
+    """
+
+    def __init__(
+        self,
+        binary_search_steps: int = 9,
+        steps: int = 10000,
+        stepsize: float = 1e-2,
+        confidence: float = 0,
+        initial_const: float = 1e-3,
+        abort_early: bool = True,
+    ):
+        self.binary_search_steps = binary_search_steps
+        self.steps = steps
+        self.stepsize = stepsize
+        self.confidence = confidence
+        self.initial_const = initial_const
+        self.abort_early = abort_early
 
     def __call__(
         self,
-        inputs,
-        labels,
-        *,
-        target_classes=None,
-        binary_search_steps=9,
-        max_iterations=10000,
-        confidence=0,
-        learning_rate=1e-2,
-        initial_const=1e-3,
-        abort_early=True,
-    ):
-        x = ep.astensor(inputs)
+        model: Model,
+        inputs: T,
+        criterion: Union[Misclassification, TargetedMisclassification, T],
+    ) -> T:
+
+        x, restore_type = ep.astensor_(inputs)
+        criterion_ = get_criterion(criterion)
+        del inputs, criterion
+
         N = len(x)
 
-        targeted = target_classes is not None
-        if targeted:
-            labels = None
-            target_classes = ep.astensor(target_classes)
-            assert target_classes.shape == (N,)
-            is_adv = partial(
-                targeted_is_adv, target_classes=target_classes, confidence=confidence
-            )
+        if isinstance(criterion_, Misclassification):
+            targeted = False
+            classes = criterion_.labels
+            change_classes_logits = self.confidence
+        elif isinstance(criterion_, TargetedMisclassification):
+            targeted = True
+            classes = criterion_.target_classes
+            change_classes_logits = -self.confidence
         else:
-            labels = ep.astensor(labels)
-            assert labels.shape == (N,)
-            is_adv = partial(untargeted_is_adv, labels=labels, confidence=confidence)
+            raise ValueError("unsupported criterion")
 
-        bounds = self.model.bounds()
+        def is_adversarial(perturbed: ep.Tensor, logits: ep.Tensor) -> ep.Tensor:
+            if change_classes_logits != 0:
+                logits += ep.onehot_like(logits, classes, value=change_classes_logits)
+            return criterion_(perturbed, logits)
+
+        if classes.shape != (N,):
+            name = "target_classes" if targeted else "labels"
+            raise ValueError(
+                f"expected {name} to have shape ({N},), got {classes.shape}"
+            )
+
+        bounds = model.bounds
         to_attack_space = partial(_to_attack_space, bounds=bounds)
         to_model_space = partial(_to_model_space, bounds=bounds)
 
         x_attack = to_attack_space(x)
         reconstsructed_x = to_model_space(x_attack)
 
-        rows = np.arange(N)
+        rows = range(N)
 
-        def loss_fun(delta: ep.Tensor, consts: ep.Tensor) -> ep.Tensor:
+        def loss_fun(
+            delta: ep.Tensor, consts: ep.Tensor
+        ) -> Tuple[ep.Tensor, Tuple[ep.Tensor, ep.Tensor]]:
             assert delta.shape == x_attack.shape
             assert consts.shape == (N,)
 
             x = to_model_space(x_attack + delta)
-            logits = ep.astensor(self.model.forward(x.tensor))
+            logits = model(x)
 
             if targeted:
-                c_minimize = best_other_classes(logits, target_classes)
-                c_maximize = target_classes
+                c_minimize = best_other_classes(logits, classes)
+                c_maximize = classes  # target_classes
             else:
-                c_minimize = labels
-                c_maximize = best_other_classes(logits, labels)
+                c_minimize = classes  # labels
+                c_maximize = best_other_classes(logits, classes)
 
             is_adv_loss = logits[rows, c_minimize] - logits[rows, c_maximize]
             assert is_adv_loss.shape == (N,)
-            is_adv_loss = is_adv_loss + confidence
+
+            is_adv_loss = is_adv_loss + self.confidence
             is_adv_loss = ep.maximum(0, is_adv_loss)
             is_adv_loss = is_adv_loss * consts
 
@@ -76,55 +116,52 @@ class L2CarliniWagnerAttack:
 
         loss_aux_and_grad = ep.value_and_grad_fn(x, loss_fun, has_aux=True)
 
-        consts = initial_const * np.ones((N,))
+        consts = self.initial_const * np.ones((N,))
         lower_bounds = np.zeros((N,))
         upper_bounds = np.inf * np.ones((N,))
 
         best_advs = ep.zeros_like(x)
-        best_advs_norms = ep.ones(x, (N,)) * np.inf
+        best_advs_norms = ep.full(x, (N,), ep.inf)
 
         # the binary search searches for the smallest consts that produce adversarials
-        for binary_search_step in range(binary_search_steps):
+        for binary_search_step in range(self.binary_search_steps):
             if (
-                binary_search_step == binary_search_steps - 1
-                and binary_search_steps >= 10
+                binary_search_step == self.binary_search_steps - 1
+                and self.binary_search_steps >= 10
             ):
-                # in the last iteration, repeat the search once
+                # in the last binary search step, repeat the search once
                 consts = np.minimum(upper_bounds, 1e10)
 
             # create a new optimizer find the delta that minimizes the loss
             delta = ep.zeros_like(x_attack)
             optimizer = AdamOptimizer(delta)
 
-            found_advs = np.full(
-                (N,), fill_value=False
-            )  # found adv with the current consts
+            # tracks whether adv with the current consts was found
+            found_advs = np.full((N,), fill_value=False)
             loss_at_previous_check = np.inf
 
             consts_ = ep.from_numpy(x, consts.astype(np.float32))
 
-            for iteration in range(max_iterations):
+            for step in range(self.steps):
                 loss, (perturbed, logits), gradient = loss_aux_and_grad(delta, consts_)
-                delta += optimizer(gradient, learning_rate)
+                delta += optimizer(gradient, self.stepsize)
 
-                if abort_early and iteration % (np.ceil(max_iterations / 10)) == 0:
-                    # after each tenth of the iterations, check progress
+                if self.abort_early and step % (np.ceil(self.steps / 10)) == 0:
+                    # after each tenth of the overall steps, check progress
                     if not (loss <= 0.9999 * loss_at_previous_check):
                         break  # stop Adam if there has been no progress
                     loss_at_previous_check = loss
 
-                found_advs_iter = is_adv(logits)
+                found_advs_iter = is_adversarial(perturbed, logits)
                 found_advs = np.logical_or(found_advs, found_advs_iter.numpy())
 
                 norms = flatten(perturbed - x).square().sum(axis=-1).sqrt()
                 closer = norms < best_advs_norms
-                new_best = closer.float32() * found_advs_iter.float32()
+                new_best = ep.logical_and(closer, found_advs_iter)
 
-                best_advs = (
-                    atleast_kd(new_best, best_advs.ndim) * perturbed
-                    + (1 - atleast_kd(new_best, best_advs.ndim)) * best_advs
-                )
-                best_advs_norms = new_best * norms + (1 - new_best) * best_advs_norms
+                new_best_ = atleast_kd(new_best, best_advs.ndim)
+                best_advs = ep.where(new_best_, perturbed, best_advs)
+                best_advs_norms = ep.where(new_best, norms, best_advs_norms)
 
             upper_bounds = np.where(found_advs, consts, upper_bounds)
             lower_bounds = np.where(found_advs, lower_bounds, consts)
@@ -135,16 +172,23 @@ class L2CarliniWagnerAttack:
                 np.isinf(upper_bounds), consts_exponential_search, consts_binary_search
             )
 
-        return best_advs.tensor
+        return restore_type(best_advs)
 
 
 class AdamOptimizer:
-    def __init__(self, x):
+    def __init__(self, x: ep.Tensor) -> None:
         self.m = ep.zeros_like(x)
         self.v = ep.zeros_like(x)
         self.t = 0
 
-    def __call__(self, gradient, learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8):
+    def __call__(
+        self,
+        gradient: ep.Tensor,
+        stepsize: float,
+        beta1: float = 0.9,
+        beta2: float = 0.999,
+        epsilon: float = 1e-8,
+    ) -> ep.Tensor:
         self.t += 1
 
         self.m = beta1 * self.m + (1 - beta1) * gradient
@@ -156,29 +200,15 @@ class AdamOptimizer:
         m_hat = self.m / bias_correction_1
         v_hat = self.v / bias_correction_2
 
-        return -learning_rate * m_hat / (ep.sqrt(v_hat) + epsilon)
+        return -stepsize * m_hat / (ep.sqrt(v_hat) + epsilon)
 
 
-def untargeted_is_adv(logits: ep.Tensor, labels: ep.Tensor, confidence) -> ep.Tensor:
-    logits = logits + ep.onehot_like(logits, labels, value=confidence)
-    classes = logits.argmax(axis=-1)
-    return classes != labels
-
-
-def targeted_is_adv(
-    logits: ep.Tensor, target_classes: ep.Tensor, confidence
-) -> ep.Tensor:
-    logits = logits - ep.onehot_like(logits, target_classes, value=confidence)
-    classes = logits.argmax(axis=-1)
-    return classes == target_classes
-
-
-def best_other_classes(logits, exclude):
-    other_logits = logits - ep.onehot_like(logits, exclude, value=np.inf)
+def best_other_classes(logits: ep.Tensor, exclude: ep.Tensor) -> ep.Tensor:
+    other_logits = logits - ep.onehot_like(logits, exclude, value=ep.inf)
     return other_logits.argmax(axis=-1)
 
 
-def _to_attack_space(x: ep.Tensor, *, bounds: tuple) -> ep.Tensor:
+def _to_attack_space(x: ep.Tensor, *, bounds: Bounds) -> ep.Tensor:
     min_, max_ = bounds
     a = (min_ + max_) / 2
     b = (max_ - min_) / 2
@@ -188,7 +218,7 @@ def _to_attack_space(x: ep.Tensor, *, bounds: tuple) -> ep.Tensor:
     return x
 
 
-def _to_model_space(x: ep.Tensor, *, bounds) -> ep.Tensor:
+def _to_model_space(x: ep.Tensor, *, bounds: Bounds) -> ep.Tensor:
     min_, max_ = bounds
     x = x.tanh()  # from (-inf, +inf) to (-1, +1)
     a = (min_ + max_) / 2

@@ -1,7 +1,15 @@
+from typing import Union, Any
 import eagerpy as ep
 
+from ..criteria import Criterion
 
-class InversionAttack:
+from ..models import Model
+
+from .base import MinimizationAttack
+from .base import T
+
+
+class InversionAttack(MinimizationAttack):
     """Creates "negative images" by inverting the pixel values according to [1]_.
 
     References
@@ -12,11 +20,12 @@ class InversionAttack:
             https://arxiv.org/abs/1607.02533
     """
 
-    def __init__(self, model):
-        self.model = model
+    def __call__(
+        self, model: Model, inputs: T, criterion: Union[Criterion, Any] = None
+    ) -> T:
+        x, restore_type = ep.astensor_(inputs)
+        del inputs, criterion
 
-    def __call__(self, inputs, labels):
-        x = ep.astensor(inputs)
-        min_, max_ = self.model.bounds()
+        min_, max_ = model.bounds
         x = min_ + max_ - x
-        return x.tensor
+        return restore_type(x)

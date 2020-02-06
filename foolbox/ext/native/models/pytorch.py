@@ -1,19 +1,34 @@
-import torch
+from typing import Any, cast
 import warnings
-from .base import Model
-from ..devutils import unwrap
+import eagerpy as ep
+
+from ..types import BoundsInput, Preprocessing
+
+from .base import ModelWithPreprocessing
 
 
-class PyTorchModel(Model):
-    def __init__(self, model, bounds, device=None, preprocessing=None):
-        self._bounds = bounds
+def get_device(device: Any) -> Any:
+    import torch
 
-        if device is None:
-            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        elif isinstance(device, str):
-            self.device = torch.device(device)
-        else:
-            self.device = device
+    if device is None:
+        return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if isinstance(device, str):
+        return torch.device(device)
+    return device
+
+
+class PyTorchModel(ModelWithPreprocessing):
+    def __init__(
+        self,
+        model: Any,
+        bounds: BoundsInput,
+        device: Any = None,
+        preprocessing: Preprocessing = None,
+    ) -> None:
+        import torch
+
+        if not isinstance(model, torch.nn.Module):
+            raise ValueError("expected model to be a torch.nn.Module instance")
 
         if model.training:
             with warnings.catch_warnings():
@@ -23,62 +38,20 @@ class PyTorchModel(Model):
                     " not be deterministic. Call the eval() method to set it in"
                     " evaluation mode if this is not intended."
                 )
-        self._model = model.to(self.device)
-        self._init_preprocessing(preprocessing)
 
-    def _init_preprocessing(self, preprocessing):
-        if preprocessing is None:
-            preprocessing = dict()
-        assert set(preprocessing.keys()) - {"mean", "std", "axis", "flip_axis"} == set()
-        mean = preprocessing.get("mean", None)
-        std = preprocessing.get("std", None)
-        axis = preprocessing.get("axis", None)
-        flip_axis = preprocessing.get("flip_axis", None)
+        device = get_device(device)
+        model = model.to(device)
+        dummy = ep.torch.zeros(0, device=device)
 
-        if mean is not None:
-            mean = torch.as_tensor(mean).to(self.device)
-        if std is not None:
-            std = torch.as_tensor(std).to(self.device)
+        # we need to make sure the output only requires_grad if the input does
+        def _model(x: torch.Tensor) -> torch.Tensor:
+            with torch.set_grad_enabled(x.requires_grad):
+                result = cast(torch.Tensor, model(x))
+            return result
 
-        if axis is not None:
-            assert (
-                axis < 0
-            ), "axis must be negative integer, with -1 representing the last axis"
-            shape = (1,) * (abs(axis) - 1)
-            if mean is not None:
-                assert (
-                    mean.ndim == 1
-                ), "If axis is specified, mean should be 1-dimensional"
-                mean = mean.reshape(mean.shape + shape)
-            if std is not None:
-                assert (
-                    std.ndim == 1
-                ), "If axis is specified, std should be 1-dimensional"
-                std = std.reshape(std.shape + shape)
+        super().__init__(
+            _model, bounds=bounds, dummy=dummy, preprocessing=preprocessing
+        )
 
-        self._preprocessing_mean = mean
-        self._preprocessing_std = std
-        self._preprocessing_flip_axis = flip_axis
-
-    def _preprocess(self, inputs):
-        x = inputs
-        if self._preprocessing_flip_axis is not None:
-            x = torch.flip(x, (self._preprocessing_flip_axis,))
-        if self._preprocessing_mean is not None:
-            x = x - self._preprocessing_mean
-        if self._preprocessing_std is not None:
-            x = x / self._preprocessing_std
-        assert x.dtype == inputs.dtype
-        return x
-
-    def bounds(self):
-        return self._bounds
-
-    def forward(self, inputs):
-        inputs, restore = unwrap(inputs)
-        x = inputs
-        assert x.device == self.device
-        x = self._preprocess(x)
-        x = self._model(x)
-        assert x.ndim == 2
-        return restore(x)
+        self.data_format = "channels_first"
+        self.device = device

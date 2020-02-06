@@ -1,47 +1,46 @@
+from typing import Optional, Tuple, Any
 import eagerpy as ep
 import foolbox
-from .models import PyTorchModel
-from .models import TensorFlowModel
-from .models import JAXModel
-from .models import Foolbox2Model
+import warnings
+
+from .types import Bounds
+from .models import Model
 
 
-def accuracy(fmodel, inputs, labels):
-    logits = ep.astensor(fmodel.forward(inputs))
-    predictions = logits.argmax(axis=-1)
-    accuracy = (predictions == labels).float32().mean()
+def accuracy(fmodel: Model, inputs: Any, labels: Any) -> float:
+    inputs_, labels_ = ep.astensors(inputs, labels)
+    del inputs, labels
+
+    predictions = fmodel(inputs_).argmax(axis=-1)
+    accuracy = (predictions == labels_).float32().mean()
     return accuracy.item()
 
 
 def samples(
-    model,
-    dataset="imagenet",
-    index=0,
-    batchsize=1,
-    shape=(224, 224),
-    data_format=None,
-    bounds=None,
-):
-    if data_format is None:
-        if isinstance(model, PyTorchModel):
-            data_format = "channels_first"
-        elif isinstance(model, TensorFlowModel):
-            import tensorflow as tf
+    fmodel: Model,
+    dataset: str = "imagenet",
+    index: int = 0,
+    batchsize: int = 1,
+    shape: Tuple[int, int] = (224, 224),
+    data_format: Optional[str] = None,
+    bounds: Optional[Bounds] = None,
+) -> Any:
+    if hasattr(fmodel, "data_format"):
+        if data_format is None:
+            data_format = fmodel.data_format  # type: ignore
+        elif data_format != fmodel.data_format:  # type: ignore
+            raise ValueError(
+                f"data_format ({data_format}) does not match model.data_format ({fmodel.data_format})"  # type: ignore
+            )
+    elif data_format is None:
+        raise ValueError(
+            "data_format could not be inferred, please specify it explicitly"
+        )
 
-            data_format = tf.keras.backend.image_data_format()
-        elif isinstance(model, Foolbox2Model):
-            channel_axis = model.foolbox_model.channel_axis()
-            if channel_axis == 1:
-                data_format = "channels_first"
-            elif channel_axis == 3:
-                data_format = "channels_last"
-            else:
-                raise ValueError("data_format could not be inferred from the model")
-        else:
-            raise ValueError("data_format could not be inferred from the model")
     if bounds is None:
-        bounds = model.bounds()
-    images, labels = foolbox.utils.samples(
+        bounds = fmodel.bounds
+
+    images, labels = foolbox.utils.samples(  # type: ignore
         dataset=dataset,
         index=index,
         batchsize=batchsize,
@@ -49,25 +48,11 @@ def samples(
         data_format=data_format,
         bounds=bounds,
     )
-    if isinstance(model, PyTorchModel):
-        import torch
 
-        images = torch.as_tensor(images).to(model.device)
-        labels = torch.as_tensor(labels).to(model.device)
-    elif isinstance(model, TensorFlowModel):
-        import tensorflow as tf
-
-        with model.device:
-            images = tf.convert_to_tensor(images)
-            labels = tf.convert_to_tensor(labels)
-    elif isinstance(model, JAXModel):
-        import jax.numpy as np
-
-        images = np.asarray(images)
-        labels = np.asarray(labels)
-    elif isinstance(model, Foolbox2Model):
-        images = images
-        labels = labels
+    if hasattr(fmodel, "dummy") and fmodel.dummy is not None:  # type: ignore
+        images = ep.from_numpy(fmodel.dummy, images).raw  # type: ignore
+        labels = ep.from_numpy(fmodel.dummy, labels).raw  # type: ignore
     else:
-        raise ValueError("data_format could not be inferred from the model")
+        warnings.warn(f"unknown model type {type(fmodel)}, returning NumPy arrays")
+
     return images, labels
