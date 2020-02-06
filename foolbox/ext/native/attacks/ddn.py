@@ -10,6 +10,7 @@ from ..devutils import atleast_kd, flatten
 from .base import FixedEpsilonAttack
 from .base import get_criterion
 from .base import T
+import math
 
 
 def normalize_l2_norms(x: ep.Tensor) -> ep.Tensor:
@@ -68,11 +69,10 @@ class DDNAttack(FixedEpsilonAttack):
 
         if self.rescale:
             min_, max_ = model.bounds
-            # TODO: fix this
-            scale = (max_ - min_) * ep.sqrt(x[0].size)
-            epsilon = self.epsilon * scale
+            scale = (max_ - min_) * math.sqrt(flatten(x).shape[-1])
+            init_epsilon = self.epsilon * scale
         else:
-            epsilon = self.epsilon
+            init_epsilon = self.epsilon
 
         step_size = ep.ones(x, len(x))
 
@@ -91,7 +91,7 @@ class DDNAttack(FixedEpsilonAttack):
 
         delta = ep.zeros_like(x)
 
-        epsilon = epsilon * ep.ones(x, len(x))
+        epsilon = init_epsilon * ep.ones(x, len(x))
         worst_norm = flatten(ep.maximum(x, 1 - x)).square().sum(axis=-1).sqrt()
 
         best_l2 = worst_norm
