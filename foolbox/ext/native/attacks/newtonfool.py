@@ -53,15 +53,15 @@ class NewtonFoolAttack(MinimizationAttack):
         def loss_fun(x):
             logits = model(x)
             scores = ep.softmax(logits)
-            loss = ep.take_along_axis(scores, classes, -1).sum()
-            return loss, scores
+            pred_scores = scores[range(N), classes]
+            loss = pred_scores.sum()
+            return loss, (scores, pred_scores)
 
         for i in range(self.max_iter):
             # (1) get the scores and gradients
-            _, scores, gradients = ep.value_aux_and_grad(loss_fun, x)
+            _, (scores, pred_scores), gradients = ep.value_aux_and_grad(loss_fun, x)
 
             pred = scores.argmax(-1)
-            pred_scores = ep.take_along_axis(scores, classes, -1)
             num_classes = scores.shape[-1]
 
             # (2) calculate gradient norm
@@ -76,14 +76,13 @@ class NewtonFoolAttack(MinimizationAttack):
             # (4) stop the attack if an adversarial example has been found
             # this is not described in the paper but otherwise once the prob. drops
             # below chance level the likelihood is not decreased but increased
-            is_adversarial = (pred != classes).float32()
-            delta *= is_adversarial
+            is_not_adversarial = (pred == classes).float32()
+            delta *= is_not_adversarial
 
             # (5) calculate & apply current perturbation
-            x -= (
-                atleast_kd(delta / gradients_l2_norm.square(), gradients.ndim)
-                * gradients
-            )
+            a = atleast_kd(delta / gradients_l2_norm.square(), gradients.ndim)
+            x -= a * gradients
+
             x = ep.clip(x, min_, max_)
 
         return restore_type(x)
