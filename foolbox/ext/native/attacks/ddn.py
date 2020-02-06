@@ -10,7 +10,6 @@ from ..devutils import atleast_kd, flatten
 from .base import FixedEpsilonAttack
 from .base import get_criterion
 from .base import T
-import math
 
 
 def normalize_l2_norms(x: ep.Tensor) -> ep.Tensor:
