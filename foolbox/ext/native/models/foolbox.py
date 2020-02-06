@@ -1,7 +1,8 @@
-from typing import TypeVar, Tuple
+from typing import TypeVar, Tuple, Any
 import eagerpy as ep
 
 from ..types import Bounds
+
 from .base import Model
 
 
@@ -9,7 +10,7 @@ T = TypeVar("T")
 
 
 class Foolbox2Model(Model):
-    def __init__(self, model) -> None:
+    def __init__(self, model: Any) -> None:
         self._model = model
 
     @property
