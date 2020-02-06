@@ -23,21 +23,21 @@ class EADAttack(MinimizationAttack):
         self,
         binary_search_steps: int = 9,
         steps: int = 10000,
-        confidence: int = 0,
-        initial_learning_rate: float = 1e-2,
-        regularization: float = 1e-2,
+        initial_stepsize: float = 1e-2,
+        confidence: float = 0.0,
         initial_const: float = 1e-3,
-        abort_early: bool = True,
+        regularization: float = 1e-2,
         decision_rule: Union[Literal["EN"], Literal["L1"]] = "EN",
+        abort_early: bool = True,
     ):
 
         if decision_rule not in ("EN", "L1"):
-            raise ValueError("")
+            raise ValueError("invalid decision rule")
 
         self.binary_search_steps = binary_search_steps
         self.steps = steps
         self.confidence = confidence
-        self.initial_learning_rate = initial_learning_rate
+        self.initial_stepsize = initial_stepsize
         self.regularization = regularization
         self.initial_const = initial_const
         self.abort_early = abort_early
@@ -78,6 +78,7 @@ class EADAttack(MinimizationAttack):
             )
 
         min_, max_ = model.bounds
+        rows = range(N)
 
         def loss_fun(y_k: ep.Tensor, consts: ep.Tensor) -> Tuple[ep.Tensor, ep.Tensor]:
             assert y_k.shape == x.shape
@@ -92,8 +93,9 @@ class EADAttack(MinimizationAttack):
                 c_minimize = classes
                 c_maximize = best_other_classes(logits, classes)
 
-            is_adv_loss = logits[range(N), c_minimize] - logits[range(N), c_maximize]
+            is_adv_loss = logits[rows, c_minimize] - logits[rows, c_maximize]
             assert is_adv_loss.shape == (N,)
+
             is_adv_loss = is_adv_loss + self.confidence
             is_adv_loss = ep.maximum(0, is_adv_loss)
             is_adv_loss = is_adv_loss * consts
@@ -131,22 +133,22 @@ class EADAttack(MinimizationAttack):
 
             for iteration in range(self.steps):
                 # square-root learning rate decay
-                learning_rate = (
-                    self.initial_learning_rate * (1.0 - iteration / self.steps) ** 0.5
-                )
+                stepsize = self.initial_stepsize * (1.0 - iteration / self.steps) ** 0.5
 
-                loss, logits, gradient = loss_aux_and_grad(x_k, consts)
+                loss, logits, gradient = loss_aux_and_grad(y_k, consts)
 
                 x_k_old = x_k
                 x_k = project_shrinkage_thresholding(
-                    y_k - learning_rate * gradient, x, self.regularization, min_, max_
+                    y_k - stepsize * gradient, x, self.regularization, min_, max_
                 )
-                y_k = x_k + iteration / (iteration + 3) - (x_k - x_k_old)
+                y_k = x_k + iteration / (iteration + 3.0) * (x_k - x_k_old)
 
                 if self.abort_early and iteration % (math.ceil(self.steps / 10)) == 0:
                     # after each tenth of the iterations, check progress
-                    if not (loss <= 0.9999 * loss_at_previous_check):
-                        break  # stop Adam if there has been no progress
+                    # TODO: loss is a scalar ep tensor. is this the bst way to
+                    #  implement the condition?
+                    if not ep.all(loss <= 0.9999 * loss_at_previous_check):
+                        break  # stop optimization if there has been no progress
                     loss_at_previous_check = loss
 
                 found_advs_iter = is_adversarial(x_k, logits)
