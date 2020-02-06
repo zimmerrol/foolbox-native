@@ -16,7 +16,7 @@ attacks: List[AttackGradientType] = [
     (fbn.attacks.L2CarliniWagnerAttack(binary_search_steps=3, steps=50), True),
     (fbn.attacks.NewtonFoolAttack(), True),
     (fbn.attacks.L2ContrastReductionAttack(L2(100.0)).repeat(3), False),
-    (fbn.attacks.VirtualAdversarialAttack(iterations=10, xi=1e-2, epsilon=5), True)
+    (fbn.attacks.VirtualAdversarialAttack(iterations=10, xi=1e-2, epsilon=5), True),
 ]
 
 
