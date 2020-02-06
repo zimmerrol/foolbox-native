@@ -23,11 +23,14 @@ def normalize_l2_norms(x: ep.Tensor) -> ep.Tensor:
 class DDNAttack(FixedEpsilonAttack):
     """DDN Attack"""
 
-    def __init__(self, rescale: bool = False,
+    def __init__(
+        self,
+        rescale: bool = False,
         epsilon: float = 2.0,
         init_epsilon: float = 1.0,
         num_steps: int = 10,
-        gamma: float = 0.05):
+        gamma: float = 0.05,
+    ):
 
         self.rescale = rescale
         self.epsilon = epsilon
@@ -36,10 +39,10 @@ class DDNAttack(FixedEpsilonAttack):
         self.gamma = gamma
 
     def __call__(
-            self,
-            model: Model,
-            inputs: T,
-            criterion: Union[Misclassification, TargetedMisclassification, T],
+        self,
+        model: Model,
+        inputs: T,
+        criterion: Union[Misclassification, TargetedMisclassification, T],
     ) -> T:
 
         x, restore_type = ep.astensor_(inputs)
@@ -73,7 +76,9 @@ class DDNAttack(FixedEpsilonAttack):
 
         step_size = ep.ones(x, len(x))
 
-        def loss_fn(inputs: ep.Tensor, labels: ep.Tensor) -> Tuple[ep.Tensor, ep.Tensor]:
+        def loss_fn(
+            inputs: ep.Tensor, labels: ep.Tensor
+        ) -> Tuple[ep.Tensor, ep.Tensor]:
             logits = model(inputs)
 
             sign = -1.0 if targeted else 1.0
@@ -112,10 +117,13 @@ class DDNAttack(FixedEpsilonAttack):
             # perform cosine annealing of LR starting from 1.0 to 0.01
             delta = delta + atleast_kd(step_size, x.ndim) * gradients
             step_size = (
-                0.01 + (step_size - 0.01) * (1 + math.cos(math.pi * i / self.num_steps)) / 2
+                0.01
+                + (step_size - 0.01) * (1 + math.cos(math.pi * i / self.num_steps)) / 2
             )
 
-            epsilon = epsilon * (1.0 - (2 * is_adversarial.float32() - 1.0) * self.gamma)
+            epsilon = epsilon * (
+                1.0 - (2 * is_adversarial.float32() - 1.0) * self.gamma
+            )
             epsilon = ep.minimum(epsilon, worst_norm)
 
             # do step
@@ -127,7 +135,7 @@ class DDNAttack(FixedEpsilonAttack):
                 * atleast_kd(epsilon, x.ndim)
                 / delta.square().sum(axis=(1, 2, 3), keepdims=True).sqrt()
             )
-            delta = ep.clip(x + delta, * model.bounds) - x
+            delta = ep.clip(x + delta, *model.bounds) - x
 
         x_adv = x + delta
 
