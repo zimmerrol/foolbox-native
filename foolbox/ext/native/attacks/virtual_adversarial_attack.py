@@ -70,7 +70,7 @@ class VirtualAdversarialAttack(FixedEpsilonAttack):
         d = ep.normal(x, shape=x.shape, mean=0, stddev=1)
         for it in range(self.iterations):
             # normalize proposal to be unit vector
-            d = self.xi * d / ep.sqrt((d ** 2).sum(keepdims=True, axis=(1, 2, 3)))
+            d = d * self.xi / ep.sqrt((d ** 2).sum(keepdims=True, axis=(1, 2, 3)))
 
             # use gradient of KL divergence as new search vector
             _, grad = value_and_grad(d, clean_logits)
@@ -78,6 +78,8 @@ class VirtualAdversarialAttack(FixedEpsilonAttack):
 
             # rescale search vector
             d = (bounds[1] - bounds[0]) * d
+
+            print("norms", ep.norms.l2(flatten(d), axis=-1))
 
             if ep.any(ep.norms.l2(flatten(d), axis=-1) < 1e-16):
                 raise RuntimeError(
