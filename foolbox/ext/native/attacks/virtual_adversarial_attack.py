@@ -79,8 +79,6 @@ class VirtualAdversarialAttack(FixedEpsilonAttack):
             # rescale search vector
             d = (bounds[1] - bounds[0]) * d
 
-            print("norms", ep.norms.l2(flatten(d), axis=-1))
-
             if ep.any(ep.norms.l2(flatten(d), axis=-1) < 1e-16):
                 raise RuntimeError(
                     "Gradient vanished; this can happen if xi is too small."
