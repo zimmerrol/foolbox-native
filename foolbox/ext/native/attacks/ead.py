@@ -175,7 +175,7 @@ class EADAttack(MinimizationAttack):
         return restore_type(best_advs)
 
 
-def untargeted_is_adv(logits: ep.Tensor, labels: ep.Tensor, confidence) -> ep.Tensor:
+def untargeted_is_adv(logits: ep.Tensor, labels: ep.Tensor, confidence: float) -> ep.Tensor:
     logits = logits + ep.onehot_like(logits, labels, value=confidence)
     classes = logits.argmax(axis=-1)
     return classes != labels
