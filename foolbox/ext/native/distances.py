@@ -18,10 +18,10 @@ class LpDistance(Distance):
     def __init__(self, p: float):
         self.p = p
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"LpDistance({self.p})"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"L{self.p} distance"
 
     def __call__(self, reference: T, perturbed: T) -> T:
