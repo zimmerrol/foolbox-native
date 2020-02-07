@@ -7,8 +7,11 @@ import foolbox.ext.native as fbn
 import re
 
 L2 = fbn.types.L2
+Linf = fbn.types.Linf
 
 attacks: List[Tuple[fbn.Attack, bool]] = [
+    (fbn.attacks.DDNAttack(), True),
+    (fbn.attacks.DDNAttack(rescale=True), True),
     (fbn.attacks.InversionAttack(), False),
     (fbn.attacks.L2ContrastReductionAttack(L2(100.0)), False),
     (fbn.attacks.BinarySearchContrastReductionAttack(binary_search_steps=15), False),
@@ -18,6 +21,15 @@ attacks: List[Tuple[fbn.Attack, bool]] = [
     (fbn.attacks.EADAttack(binary_search_steps=3, steps=20, decision_rule="L1"), True),
     (fbn.attacks.NewtonFoolAttack(steps=20), True),
     (fbn.attacks.L2ContrastReductionAttack(L2(100.0)).repeat(3), False),
+    (fbn.attacks.VirtualAdversarialAttack(iterations=50, xi=1, epsilon=10), True),
+    (fbn.attacks.L2BasicIterativeAttack(L2(100.0), stepsize=5.0, steps=10), True),
+    (fbn.attacks.LinfBasicIterativeAttack(Linf(1.0), stepsize=5.0, steps=10), True),
+    (
+        fbn.attacks.ProjectedGradientDescentAttack(Linf(1.0), stepsize=5.0, steps=10),
+        True,
+    ),
+    (fbn.attacks.L2FastGradientAttack(L2(100.0)), True),
+    (fbn.attacks.LinfFastGradientAttack(Linf(100.0)), True),
 ]
 
 
@@ -42,6 +54,7 @@ def test_untargeted_attacks(
 
 targeted_attacks: List[Tuple[fbn.Attack, bool]] = [
     (fbn.attacks.L2CarliniWagnerAttack(binary_search_steps=3, steps=20), True),
+    (fbn.attacks.DDNAttack(), True),
     (fbn.attacks.EADAttack(binary_search_steps=3, steps=20), True),
 ]
 
