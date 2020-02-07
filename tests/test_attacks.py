@@ -121,6 +121,8 @@ def test_attacks_init_raises_exception(
 
 targeted_attacks_raises_exception: List[Tuple[Type[fbn.Attack], bool]] = [
     (fbn.attacks.EADAttack(), True),
+    (fbn.attacks.DDNAttack(), True),
+    (fbn.attacks.L2CarliniWagnerAttack(), True),
 ]
 
 
@@ -147,6 +149,10 @@ def test_targeted_attacks_call_raises_exception(
     invalid_targeted_criterion = fbn.TargetedMisclassification(invalid_target_classes)
 
     class DummyCriterion(fbn.Criterion):
+        """Criterion without any functionality which is just meant to be
+        rejected by the attacks
+        """
+
         def __repr__(self) -> str:
             return ""
 
