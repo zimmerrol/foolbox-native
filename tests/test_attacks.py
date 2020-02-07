@@ -1,8 +1,10 @@
-from typing import List, Tuple
+from typing import List, Tuple, Type
 import pytest
 import eagerpy as ep
 
 import foolbox.ext.native as fbn
+
+import re
 
 L2 = fbn.types.L2
 
@@ -67,3 +69,38 @@ def test_targeted_attacks(
     adv_before_attack = criterion(x, fmodel(x))
     adv_after_attack = criterion(advs, fmodel(advs))
     assert adv_after_attack.sum().item() > adv_before_attack.sum().item()
+
+
+targeted_attacks_raises_exception: List[Tuple[fbn.Attack, Type, str, bool]] = [
+    (fbn.attacks.EADAttack(binary_search_steps=3, steps=20, decision_rule='L3'), ValueError, 'invalid a', True),
+]
+
+
+@pytest.mark.parametrize("attack_exception_text_and_grad", targeted_attacks_raises_exception)
+def test_targeted_attacks_raises_exception(
+    fmodel_and_data: Tuple[fbn.Model, ep.Tensor, ep.Tensor],
+    attack_exception_text_and_grad: Tuple[fbn.Attack, Type, str, bool],
+) -> None:
+
+    attack, target_exception_type, target_exception_text, attack_uses_grad = attack_exception_text_and_grad
+    fmodel, x, y = fmodel_and_data
+
+    if isinstance(x, ep.NumPyTensor) and attack_uses_grad:
+        pytest.skip()
+
+    x = (x - fmodel.bounds.lower) / (fmodel.bounds.upper - fmodel.bounds.lower)
+    fmodel = fmodel.transform_bounds((0, 1))
+
+    num_classes = fmodel(x).shape[-1]
+    target_classes = (y + 1) % num_classes
+    criterion = fbn.TargetedMisclassification(target_classes)
+
+    try:
+        attack(fmodel, x, criterion)
+    except target_exception_type as e:
+        assert isinstance(e, target_exception_type)
+    else:
+        raise AssertionError(f'Did not raise exception: {str(target_exception_type)}')
+
+    exception_text = str(excinfo.value)
+    assert re.search(target_exception_text, exception_text)
