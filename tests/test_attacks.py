@@ -84,38 +84,14 @@ def test_targeted_attacks(
     assert adv_after_attack.sum().item() > adv_before_attack.sum().item()
 
 
-attacks_init_raises_exception: List[Tuple[Type[fbn.Attack], dict, Type, str, bool]] = [
-    (
-        fbn.attacks.EADAttack,
-        dict(binary_search_steps=3, steps=20, decision_rule="L2"),
-        ValueError,
-        "invalid decision rule",
-        True,
-    ),
-]
-
-
-@pytest.mark.parametrize(
-    "attack_exception_text_and_grad", attacks_init_raises_exception
-)
-def test_attacks_init_raises_exception(
-    fmodel_and_data: Tuple[fbn.Model, ep.Tensor, ep.Tensor],
-    attack_exception_text_and_grad: Tuple[fbn.Attack, Type, str, bool],
-) -> None:
-
-    (
-        attack_type,
-        attack_arguments,
-        target_exception_type,
-        target_exception_text,
-        attack_uses_grad,
-    ) = attack_exception_text_and_grad
-
-    with pytest.raises(target_exception_type) as excinfo:
-        attack_type(**attack_arguments)
+def test_ead_init_raises():
+    with pytest.raises(ValueError) as excinfo:
+        fbn.attacks.EADAttack(binary_search_steps=3, steps=20, decision_rule="L2")
 
     exception_text = str(excinfo.value)
-    exception_text_found = re.search(target_exception_text, exception_text) is not None
+    exception_text_found = (
+        re.search("invalid decision rule", exception_text) is not None
+    )
     assert exception_text_found
 
 
