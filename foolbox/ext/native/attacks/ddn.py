@@ -108,15 +108,9 @@ class DDNAttack(FixedEpsilonAttack):
 
             is_both = ep.logical_and(is_adversarial, is_smaller)
             adv_found = ep.logical_or(adv_found, is_adversarial)
-            best_l2 = (
-                best_l2 * (ep.logical_not(is_both)).float32() + l2 * is_both.float32()
-            )
+            best_l2 = ep.where(is_both, l2, best_l2)
 
-            is_both_kd = atleast_kd(is_both, len(x.shape))
-            best_delta = (
-                best_delta * (ep.logical_not(is_both_kd).float32())
-                + delta * is_both_kd.float32()
-            )
+            best_delta = ep.where(atleast_kd(is_both, x.ndim), delta, best_delta)
 
             # perform cosine annealing of LR starting from 1.0 to 0.01
             delta = delta + atleast_kd(stepsize, x.ndim) * gradients
@@ -124,9 +118,7 @@ class DDNAttack(FixedEpsilonAttack):
                 0.01 + (stepsize - 0.01) * (1 + math.cos(math.pi * i / self.steps)) / 2
             )
 
-            epsilon = epsilon * (
-                1.0 - (2 * is_adversarial.float32() - 1.0) * self.gamma
-            )
+            epsilon = epsilon * ep.where(is_adversarial, 1 - self.gamma, 1 + self.gamma)
             epsilon = ep.minimum(epsilon, worst_norm)
 
             # do step
