@@ -19,6 +19,7 @@ attacks: List[Tuple[fbn.Attack, bool]] = [
     (fbn.attacks.L2ContrastReductionAttack(L2(100.0)).repeat(3), False),
 ]
 
+
 @pytest.mark.parametrize("attack_and_grad", attacks)
 def test_untargeted_attacks(
     fmodel_and_data: Tuple[fbn.Model, ep.Tensor, ep.Tensor],
