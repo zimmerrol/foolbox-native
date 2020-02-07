@@ -157,8 +157,10 @@ def test_targeted_attacks_call_raises_exception(
 
     invalid_criterion = DummyCriterion()
 
+    # check if targeted attack criterion with invalid number of classes is rejected
     with pytest.raises(ValueError):
         attack(fmodel, x, invalid_targeted_criterion)
 
+    # check if only the two valid criteria are accepted
     with pytest.raises(ValueError):
         attack(fmodel, x, invalid_criterion)
