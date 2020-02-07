@@ -71,18 +71,55 @@ def test_targeted_attacks(
     assert adv_after_attack.sum().item() > adv_before_attack.sum().item()
 
 
-targeted_attacks_raises_exception: List[Tuple[fbn.Attack, Type, str, bool]] = [
-    (fbn.attacks.EADAttack(binary_search_steps=3, steps=20, decision_rule='L3'), ValueError, 'invalid a', True),
+attacks_init_raises_exception: List[Tuple[Type[fbn.Attack], dict, Type, str, bool]] = [
+    (
+        fbn.attacks.EADAttack,
+        dict(binary_search_steps=3, steps=20, decision_rule="L2"),
+        ValueError,
+        "invalid decision rule",
+        True,
+    ),
 ]
 
 
-@pytest.mark.parametrize("attack_exception_text_and_grad", targeted_attacks_raises_exception)
-def test_targeted_attacks_raises_exception(
+@pytest.mark.parametrize(
+    "attack_exception_text_and_grad", attacks_init_raises_exception
+)
+def test_attacks_init_raises_exception(
     fmodel_and_data: Tuple[fbn.Model, ep.Tensor, ep.Tensor],
     attack_exception_text_and_grad: Tuple[fbn.Attack, Type, str, bool],
 ) -> None:
 
-    attack, target_exception_type, target_exception_text, attack_uses_grad = attack_exception_text_and_grad
+    (
+        attack_type,
+        attack_arguments,
+        target_exception_type,
+        target_exception_text,
+        attack_uses_grad,
+    ) = attack_exception_text_and_grad
+
+    with pytest.raises(target_exception_type) as excinfo:
+        attack_type(**attack_arguments)
+
+    exception_text = str(excinfo.value)
+    exception_text_found = re.search(target_exception_text, exception_text) is not None
+    assert exception_text_found
+
+
+targeted_attacks_raises_exception: List[Tuple[Type[fbn.Attack], bool]] = [
+    (fbn.attacks.EADAttack(), True),
+]
+
+
+@pytest.mark.parametrize(
+    "attack_exception_text_and_grad", targeted_attacks_raises_exception
+)
+def test_targeted_attacks_call_raises_exception(
+    fmodel_and_data: Tuple[fbn.Model, ep.Tensor, ep.Tensor],
+    attack_exception_text_and_grad: Tuple[fbn.Attack, bool],
+) -> None:
+
+    attack, attack_uses_grad = attack_exception_text_and_grad
     fmodel, x, y = fmodel_and_data
 
     if isinstance(x, ep.NumPyTensor) and attack_uses_grad:
@@ -93,14 +130,22 @@ def test_targeted_attacks_raises_exception(
 
     num_classes = fmodel(x).shape[-1]
     target_classes = (y + 1) % num_classes
-    criterion = fbn.TargetedMisclassification(target_classes)
+    invalid_target_classes = ep.concatenate((target_classes, target_classes), 0)
+    invalid_targeted_criterion = fbn.TargetedMisclassification(invalid_target_classes)
 
-    try:
-        attack(fmodel, x, criterion)
-    except target_exception_type as e:
-        assert isinstance(e, target_exception_type)
-    else:
-        raise AssertionError(f'Did not raise exception: {str(target_exception_type)}')
+    class DummyCriterion(fbn.Criterion):
+        def __repr__(self) -> str:
+            return ""
 
-    exception_text = str(excinfo.value)
-    assert re.search(target_exception_text, exception_text)
+        def __call__(
+            self, perturbed: fbn.criteria.T, outputs: fbn.criteria.T
+        ) -> fbn.criteria.T:
+            return ep.zeros(perturbed, len(perturbed)).double()
+
+    invalid_criterion = DummyCriterion()
+
+    with pytest.raises(ValueError):
+        attack(fmodel, x, invalid_targeted_criterion)
+
+    with pytest.raises(ValueError):
+        attack(fmodel, x, invalid_criterion)
