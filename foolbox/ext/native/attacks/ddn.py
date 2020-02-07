@@ -28,14 +28,14 @@ class DDNAttack(FixedEpsilonAttack):
         rescale: bool = False,
         epsilon: float = 2.0,
         init_epsilon: float = 1.0,
-        num_steps: int = 10,
+        steps: int = 10,
         gamma: float = 0.05,
     ):
 
         self.rescale = rescale
         self.epsilon = epsilon
         self.init_epsilon = init_epsilon
-        self.num_steps = num_steps
+        self.steps = steps
         self.gamma = gamma
 
     def __call__(
@@ -73,7 +73,7 @@ class DDNAttack(FixedEpsilonAttack):
         else:
             init_epsilon = self.epsilon
 
-        step_size = ep.ones(x, len(x))
+        stepsize = ep.ones(x, len(x))
 
         def loss_fn(
             inputs: ep.Tensor, labels: ep.Tensor
@@ -97,7 +97,7 @@ class DDNAttack(FixedEpsilonAttack):
         best_delta = delta
         adv_found = ep.zeros(x, len(x)).bool()
 
-        for i in range(self.num_steps):
+        for i in range(self.steps):
             x_adv = x + delta
 
             _, is_adversarial, gradients = grad_and_is_adversarial(x_adv, classes)
@@ -119,10 +119,9 @@ class DDNAttack(FixedEpsilonAttack):
             )
 
             # perform cosine annealing of LR starting from 1.0 to 0.01
-            delta = delta + atleast_kd(step_size, x.ndim) * gradients
-            step_size = (
-                0.01
-                + (step_size - 0.01) * (1 + math.cos(math.pi * i / self.num_steps)) / 2
+            delta = delta + atleast_kd(stepsize, x.ndim) * gradients
+            stepsize = (
+                0.01 + (stepsize - 0.01) * (1 + math.cos(math.pi * i / self.steps)) / 2
             )
 
             epsilon = epsilon * (
@@ -131,7 +130,7 @@ class DDNAttack(FixedEpsilonAttack):
             epsilon = ep.minimum(epsilon, worst_norm)
 
             # do step
-            delta = delta + atleast_kd(step_size, x.ndim) * gradients
+            delta = delta + atleast_kd(stepsize, x.ndim) * gradients
 
             # clip to valid bounds
             delta = (
